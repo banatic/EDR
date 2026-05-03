@@ -1,0 +1,14 @@
+C:\Users\moomin\Desktop\EDR\crates\edr-cluster\target\debug\deps\serde-0f465c81b90372f5.d: C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\moomin\Desktop\EDR\crates\edr-cluster\target\debug\build\serde-49ed553e01a407b0\out/private.rs
+
+C:\Users\moomin\Desktop\EDR\crates\edr-cluster\target\debug\deps\libserde-0f465c81b90372f5.rlib: C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\moomin\Desktop\EDR\crates\edr-cluster\target\debug\build\serde-49ed553e01a407b0\out/private.rs
+
+C:\Users\moomin\Desktop\EDR\crates\edr-cluster\target\debug\deps\libserde-0f465c81b90372f5.rmeta: C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\moomin\Desktop\EDR\crates\edr-cluster\target\debug\build\serde-49ed553e01a407b0\out/private.rs
+
+C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs:
+C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs:
+C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs:
+C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs:
+C:\Users\moomin\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs:
+C:\Users\moomin\Desktop\EDR\crates\edr-cluster\target\debug\build\serde-49ed553e01a407b0\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\moomin\\Desktop\\EDR\\crates\\edr-cluster\\target\\debug\\build\\serde-49ed553e01a407b0\\out

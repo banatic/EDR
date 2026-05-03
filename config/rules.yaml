@@ -1,0 +1,32 @@
+# Detection rules — Phase 5 will load these into the rule engine.
+# Format mirrors `personal_edr_spec.html`.
+
+- name: suspicious_office_child
+  desc: "Office 앱에서 쉘 프로세스 생성"
+  condition:
+    parent: ["winword.exe", "excel.exe", "powerpnt.exe", "outlook.exe"]
+    spawn:  ["cmd.exe", "powershell.exe", "wscript.exe", "cscript.exe", "mshta.exe"]
+  severity: 2
+
+- name: lsass_access
+  desc: "lsass.exe 핸들 오픈 — 자격증명 덤프 의심"
+  condition:
+    target_proc: "lsass.exe"
+    op: "OpenProcess"
+    not_whitelist: true
+  severity: 2
+
+- name: run_key_persistence
+  desc: "Run 키 등록"
+  condition:
+    category: Registry
+    op: "SetValue"
+    target_pattern: "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\*"
+  severity: 1
+
+- name: etw_patch_detected
+  desc: "ntdll!EtwEventWrite 바이트 변경 감지"
+  condition:
+    category: Integrity
+    op: "EtwPatch"
+  severity: 2

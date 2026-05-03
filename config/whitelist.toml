@@ -1,0 +1,22 @@
+# Whitelist entries — events matching these are dimmed (or hidden) in the UI.
+# Schema mirrors `personal_edr_spec.html`: (proc, category, target_pattern).
+
+[[whitelist]]
+proc = "chrome.exe"
+category = "network"
+target_pattern = "*.google.com"
+
+[[whitelist]]
+proc = "chrome.exe"
+category = "network"
+target_pattern = "*.gstatic.com"
+
+[[whitelist]]
+proc = "explorer.exe"
+category = "file"
+target_pattern = "C:\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\INetCache\\*"
+
+[[whitelist]]
+proc = "svchost.exe"
+category = "network"
+target_pattern = "*.windowsupdate.com"

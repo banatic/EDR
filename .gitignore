@@ -1,0 +1,35 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Node / Vite
+node_modules/
+app/dist/
+app/.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Tauri
+app/src-tauri/target/
+app/src-tauri/gen/schemas/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime data / artifacts
+*.duckdb
+*.duckdb.wal
+*.log
+data/
+
+# Local secrets / config overrides
+.env
+.env.*
+!.env.example

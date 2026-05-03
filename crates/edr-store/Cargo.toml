@@ -1,0 +1,24 @@
+[package]
+name = "edr-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# Enable the DuckDB-backed persistent store. Requires CMake + a C++ toolchain
+# (`bundled` builds DuckDB from source). Without this feature the crate still
+# compiles and exposes the in-memory store + the EventStore trait.
+duckdb = ["dep:duckdb"]
+
+[dependencies]
+edr-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+duckdb = { workspace = true, optional = true }

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir C:\\\\Users\\\\moomin\\\\Desktop\\\\EDR *)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(npm --version)",
+      "Bash(where cmake *)",
+      "Bash(where clang *)",
+      "Bash(where cl *)",
+      "Bash(where link *)",
+      "Bash(rustup show *)",
+      "Bash(cargo check *)",
+      "Bash(cargo test *)",
+      "Bash(cargo run *)",
+      "Bash(dir /B crates app)",
+      "Bash(dir /B app\\\\src-tauri)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(npm run *)",
+      "Bash(findstr /R \"test result\")"
+    ]
+  }
+}

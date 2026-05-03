@@ -1,0 +1,54 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/edr-core",
+    "crates/edr-store",
+    "crates/edr-collector",
+    "crates/edr-cluster",
+    "crates/edr-rules",
+    "crates/edr-cli",
+    "app/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+authors = ["PersonalEDR contributors"]
+
+[workspace.dependencies]
+edr-core = { path = "crates/edr-core" }
+edr-store = { path = "crates/edr-store" }
+edr-collector = { path = "crates/edr-collector" }
+
+anyhow = "1.0"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "macros", "time", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+parking_lot = "0.12"
+
+# Windows-only deps
+ferrisetw = "1.2"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_Security",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
+
+# Optional persistent store
+duckdb = { version = "1.0", features = ["bundled"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

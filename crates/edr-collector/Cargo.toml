@@ -1,0 +1,32 @@
+[package]
+name = "edr-collector"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Default keeps the crate buildable without the ETW backend (so `cargo check`
+# from a minimal toolchain succeeds). The synthetic collector is always
+# available and is useful for UI dev / tests on non-Windows machines.
+default = ["synthetic"]
+synthetic = []
+# Enable the real ETW kernel session backend. Windows-only. Pulls in the
+# `windows` crate too because providers.rs scans the process list when the
+# kernel logger is already in use.
+etw = ["dep:ferrisetw", "dep:windows"]
+# Enable the ntdll!EtwEventWrite byte-integrity watchdog described in the spec.
+integrity = ["dep:windows"]
+
+[dependencies]
+edr-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+ferrisetw = { workspace = true, optional = true }
+windows = { workspace = true, optional = true }

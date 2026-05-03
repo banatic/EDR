@@ -1,0 +1,207 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-mono,monospace)}
+.spec{padding:1.5rem 0;max-width:680px}
+.section{margin-bottom:2rem}
+.section-title{font-size:13px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:.5px solid var(--color-border-tertiary)}
+.block{background:var(--color-background-primary);border:.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:.75rem}
+.block-title{font-size:14px;font-weight:500;color:var(--color-text-primary);margin-bottom:.5rem}
+.block-body{font-size:13px;color:var(--color-text-secondary);line-height:1.7}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;margin-right:4px;margin-bottom:4px;font-weight:500}
+.tag-blue{background:var(--color-background-info);color:var(--color-text-info)}
+.tag-amber{background:var(--color-background-warning);color:var(--color-text-warning)}
+.tag-red{background:var(--color-background-danger);color:var(--color-text-danger)}
+.tag-green{background:var(--color-background-success);color:var(--color-text-success)}
+.tag-gray{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:4px 12px;font-size:13px}
+.kv .k{color:var(--color-text-secondary)}
+.kv .v{color:var(--color-text-primary);font-family:var(--font-mono)}
+.schema{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.75rem 1rem;font-family:var(--font-mono);font-size:12px;color:var(--color-text-primary);line-height:1.8;margin-top:.5rem}
+.indent{padding-left:1.25rem}
+.comment{color:var(--color-text-secondary)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.alert{border-left:2px solid var(--color-border-warning);padding:.5rem .75rem;background:var(--color-background-warning);border-radius:0 var(--border-radius-md) var(--border-radius-md) 0;font-size:12px;color:var(--color-text-warning);margin-top:.5rem}
+</style>
+
+<div class="spec">
+
+<div class="section">
+  <div class="section-title">Project overview</div>
+  <div class="block">
+    <div class="block-title">PersonalEDR</div>
+    <div class="block-body">ETW 기반 개인용 행위 분석 도구. Procmon의 raw event dump 방식을 탈피하여 프로세스별·행위별 클러스터링 및 타임라인 기반 시각화에 집중. 상용 EDR과 달리 공격자 우회 대상이 되지 않는 개인 모니터링 레이어 목적.</div>
+    <div style="margin-top:.75rem">
+      <span class="tag tag-blue">Rust (백엔드)</span>
+      <span class="tag tag-blue">Tauri 2.0</span>
+      <span class="tag tag-blue">React + TypeScript</span>
+      <span class="tag tag-blue">DuckDB</span>
+      <span class="tag tag-gray">Windows 10/11</span>
+      <span class="tag tag-amber">관리자 권한 필요</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">수집 대상 (ETW providers)</div>
+  <div class="row2">
+    <div class="block">
+      <div class="block-title">Process</div>
+      <div class="block-body">프로세스 생성/종료, 커맨드라인, 부모 PID, 사용자, 무결성 레벨</div>
+      <div style="margin-top:.5rem"><span class="tag tag-gray">Kernel-Process</span></div>
+    </div>
+    <div class="block">
+      <div class="block-title">File I/O</div>
+      <div class="block-body">생성/읽기/쓰기/삭제, 경로, 크기. 시스템 볼륨 제외 필터 옵션</div>
+      <div style="margin-top:.5rem"><span class="tag tag-gray">Kernel-File</span></div>
+    </div>
+    <div class="block">
+      <div class="block-title">Network</div>
+      <div class="block-body">TCP/UDP 연결, 원격 IP/포트, 바이트 수, DNS 쿼리</div>
+      <div style="margin-top:.5rem"><span class="tag tag-gray">Kernel-Network</span></div>
+    </div>
+    <div class="block">
+      <div class="block-title">Registry</div>
+      <div class="block-body">키 생성/수정/삭제, 값 이름, Run키 등 관심 경로 강조</div>
+      <div style="margin-top:.5rem"><span class="tag tag-gray">Kernel-Registry</span></div>
+    </div>
+  </div>
+  <div class="block">
+    <div class="block-title">추가 수집</div>
+    <div class="block-body">Image Load (DLL), Thread Remote Injection, Handle Duplication (lsass 접근 감지용)</div>
+    <div class="alert">ETW patching 우회 감지: ntdll.dll EtwEventWrite 바이트 무결성 주기 검사 (별도 스레드)</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">이벤트 스키마</div>
+  <div class="block">
+    <div class="schema">
+struct Event {<br>
+<span class="indent">ts:        i64,      <span class="comment">// unix ns</span></span><br>
+<span class="indent">pid:       u32,</span><br>
+<span class="indent">ppid:      u32,</span><br>
+<span class="indent">proc_name: String,</span><br>
+<span class="indent">category:  Category, <span class="comment">// Process|File|Network|Registry|ImageLoad</span></span><br>
+<span class="indent">op:        String,   <span class="comment">// Create|Write|Connect|SetValue ...</span></span><br>
+<span class="indent">target:    String,   <span class="comment">// 경로 or IP:port or 레지스트리 키</span></span><br>
+<span class="indent">severity:  u8,       <span class="comment">// 0=normal 1=suspicious 2=alert</span></span><br>
+<span class="indent">meta:      JsonValue <span class="comment">// 카테고리별 추가 필드</span></span><br>
+}
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">클러스터링 / 노이즈 압축 로직</div>
+  <div class="block">
+    <div class="block-title">반복 이벤트 접기</div>
+    <div class="block-body">동일 (pid, category, target_pattern) 조합이 60초 내 N회 이상 발생 시 하나의 집계 노드로 표시. 기본 임계값 N=10, 사용자 조정 가능.</div>
+  </div>
+  <div class="block">
+    <div class="block-title">화이트리스트 기반 정상 분류</div>
+    <div class="block-body">TOML 파일로 관리. 프로세스명·경로 패턴·도메인 단위 지정. 화이트리스트 이벤트는 타임라인에서 흐리게 처리, 완전 숨김 옵션.</div>
+    <div class="schema">
+[[whitelist]]<br>
+proc = "chrome.exe"<br>
+category = "network"<br>
+target_pattern = "*.google.com"
+    </div>
+  </div>
+  <div class="block">
+    <div class="block-title">첫 발생 강조</div>
+    <div class="block-body">세션 시작 이후 해당 (proc, category, target) 조합이 처음 관찰되면 "new" 배지 부착. 분석 집중 포인트 제공.</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">UI 구조</div>
+  <div class="block">
+    <div class="block-title">모드 전환</div>
+    <div class="block-body">
+      <span class="tag tag-green">모니터링 모드</span> 실시간 슬라이딩 윈도우 (기본 10분), 자동 스크롤<br style="margin-bottom:.25rem">
+      <span class="tag tag-blue">조사 모드</span> 시간 범위 고정, 자유 탐색, 프로세스 핀 고정, 이벤트 북마크
+    </div>
+  </div>
+  <div class="block">
+    <div class="block-title">메인 레이아웃 — 3패널</div>
+    <div class="block-body">
+      <b>좌</b>: 프로세스 트리 (트리 노드 클릭 → 해당 프로세스 포커스)<br>
+      <b>중</b>: Swimlane 타임라인 (Y=프로세스, X=시간, 밀도=히트맵)<br>
+      <b>우</b>: 이벤트 상세 슬라이드인 패널 (클릭 시 열림)
+    </div>
+  </div>
+  <div class="block">
+    <div class="block-title">Swimlane 타임라인 상세</div>
+    <div class="block-body">
+      - 프로세스당 메인 레인 + 카테고리별 서브레인 (접기/펼치기)<br>
+      - 이벤트 밀도 히트맵 (색상 농도 = 빈도)<br>
+      - 구간 드래그 → 해당 구간 이벤트 집계 팝업<br>
+      - 줌: 마우스휠 or 핀치 (1초 ~ 1시간 범위)<br>
+      - severity=alert 이벤트: 레드 오버레이 + 레인 상단 마커
+    </div>
+  </div>
+  <div class="block">
+    <div class="block-title">탭 뷰</div>
+    <div class="block-body">
+      <span class="tag tag-gray">타임라인</span> 메인<br>
+      <span class="tag tag-gray">프로세스 그래프</span> D3 force-directed, 노드 크기=이벤트 수, 엣지=parent-child<br>
+      <span class="tag tag-gray">네트워크 맵</span> 외부 IP 연결 지도 + 도메인 집계<br>
+      <span class="tag tag-gray">파일 접근</span> 경로 트리 + 프로세스별 색상
+    </div>
+  </div>
+  <div class="block">
+    <div class="block-title">인과관계 추적</div>
+    <div class="block-body">이벤트 클릭 시 해당 이벤트로부터 downstream 이벤트를 연결선으로 하이라이트. "이 프로세스가 만든 자식" "이 파일에 접근한 다른 프로세스" 자동 연결.</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">탐지 룰 엔진</div>
+  <div class="block">
+    <div class="block-title">YAML 외부 룰 파일</div>
+    <div class="schema">
+- name: suspicious_office_child<br>
+<span class="indent">desc: "Office 앱에서 쉘 프로세스 생성"</span><br>
+<span class="indent">condition:</span><br>
+<span class="indent indent">parent: ["winword.exe","excel.exe","powerpnt.exe"]</span><br>
+<span class="indent indent">spawn:  ["cmd.exe","powershell.exe","wscript.exe"]</span><br>
+<span class="indent">severity: 2</span><br>
+<br>
+- name: lsass_access<br>
+<span class="indent">condition:</span><br>
+<span class="indent indent">target_proc: "lsass.exe"</span><br>
+<span class="indent indent">op: "OpenProcess"</span><br>
+<span class="indent indent">not_whitelist: true</span><br>
+<span class="indent">severity: 2</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">저장 / 성능</div>
+  <div class="block">
+    <div class="kv">
+      <span class="k">실시간 버퍼</span><span class="v">tokio mpsc 채널, 메모리 링버퍼 최근 30분</span>
+      <span class="k">영구 저장</span><span class="v">DuckDB (컬럼형, 집계 쿼리 최적화)</span>
+      <span class="k">보존 기간</span><span class="v">기본 7일, 설정 가능</span>
+      <span class="k">이벤트 처리량</span><span class="v">목표 50,000 events/sec (ETW 일반 부하 기준)</span>
+      <span class="k">UI 렌더링</span><span class="v">타임라인 가상화 (보이는 범위만 렌더)</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">개발 단계</div>
+  <div class="block">
+    <div class="kv">
+      <span class="k">Phase 1</span><span class="v">ETW 수집 + DuckDB 파이프라인 (Rust CLI)</span>
+      <span class="k">Phase 2</span><span class="v">Tauri 셸 + 프로세스 트리 뷰</span>
+      <span class="k">Phase 3</span><span class="v">Swimlane 타임라인 + 클러스터링</span>
+      <span class="k">Phase 4</span><span class="v">D3 관계 그래프 + 네트워크 맵</span>
+      <span class="k">Phase 5</span><span class="v">탐지 룰 엔진 + 알림</span>
+    </div>
+  </div>
+</div>
+
+</div>

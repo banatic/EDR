@@ -1,0 +1,32 @@
+[package]
+name = "edr-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "edr"
+
+[[bin]]
+name = "edr"
+path = "src/main.rs"
+
+[features]
+default = ["synthetic"]
+synthetic = ["edr-collector/synthetic"]
+etw = ["edr-collector/etw", "edr-collector/integrity"]
+duckdb = ["edr-store/duckdb"]
+
+[dependencies]
+edr-core.workspace = true
+edr-store.workspace = true
+edr-collector.workspace = true
+edr-cluster = { path = "../edr-cluster" }
+edr-rules = { path = "../edr-rules" }
+
+anyhow.workspace = true
+clap.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros", "time", "signal"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true

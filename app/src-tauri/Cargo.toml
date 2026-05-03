@@ -1,0 +1,36 @@
+[package]
+name = "personal-edr-app"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Tauri shell for PersonalEDR"
+publish = false
+
+[lib]
+# Tauri 2 best-practice: keep the runtime bootstrap in a library so the
+# Cargo binary stays a thin shim. The lib name is referenced in main.rs.
+name = "personal_edr_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+edr-core = { path = "../../crates/edr-core" }
+edr-store = { path = "../../crates/edr-store" }
+edr-collector = { path = "../../crates/edr-collector", features = ["synthetic", "etw", "integrity"] }
+edr-cluster = { path = "../../crates/edr-cluster" }
+edr-rules = { path = "../../crates/edr-rules" }
+
+tauri = { version = "2", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "macros", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+
+[features]
+# Mirror tauri's `custom-protocol` feature so `tauri build` works.
+custom-protocol = ["tauri/custom-protocol"]
