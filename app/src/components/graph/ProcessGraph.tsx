@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import {
   forceCenter,
   forceCollide,
@@ -24,7 +24,7 @@ interface ProcLink extends SimulationLinkDatum<ProcNode> {
   weight: number;
 }
 
-export function ProcessGraph() {
+export const ProcessGraph = memo(function ProcessGraph() {
   const events = useEventStore(selectVisibleEvents);
   const focusedPid = useEventStore((s) => s.focusedPid);
   const setFocusedPid = useEventStore((s) => s.setFocusedPid);
@@ -190,7 +190,7 @@ export function ProcessGraph() {
       </div>
     </div>
   );
-}
+});
 
 function radiusFor(events: number): number {
   return Math.min(36, 6 + Math.sqrt(events) * 2);

@@ -4,7 +4,7 @@ import {
   selectVisibleRange,
   useEventStore,
 } from "../../store/eventStore";
-import type { Category } from "../../types";
+import type { Category, Event } from "../../types";
 import { LEFT_GUTTER, render } from "./timelineRenderer";
 import { useTimelineZoom } from "./useTimelineZoom";
 
@@ -14,6 +14,9 @@ interface RegionSelection {
   pxX: number;
   pxY: number;
 }
+
+/** Cap effective redraw rate. 30fps is plenty for time-series glyphs. */
+const FRAME_BUDGET_MS = 33;
 
 export function SwimlaneTimeline() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -97,50 +100,156 @@ export function SwimlaneTimeline() {
     return () => ro.disconnect();
   }, []);
 
-  // Render via rAF whenever inputs change.
+  // ---- Render scheduling ---------------------------------------------------
+  // Coalesce all redraw requests through a single rAF tick capped at ~30fps.
+  // Inputs are stored in refs so the loop always reads the latest values
+  // without us spawning a fresh closure on every prop change.
+  const renderInputsRef = useRef({
+    events,
+    pidsOrdered,
+    pidLabels,
+    view,
+    focusedPid,
+    selectedEventId,
+    hoverId,
+    showDimmed,
+    size,
+  });
+  renderInputsRef.current = {
+    events,
+    pidsOrdered,
+    pidLabels,
+    view,
+    focusedPid,
+    selectedEventId,
+    hoverId,
+    showDimmed,
+    size,
+  };
+
+  // Track which inputs we drew last so we can decide whether a new event
+  // batch actually requires a repaint. Events that fall outside the
+  // visible window (count of events in-window unchanged) skip the redraw.
+  const lastDrawRef = useRef({
+    eventsLength: -1,
+    lastEventTs: -1,
+    lastEventInRange: -1, // ts of the most recent in-window event we drew
+    inRangeCount: -1,
+    fromNs: -1,
+    toNs: -1,
+    pidCount: -1,
+    focusedPid: null as number | null,
+    selectedEventId: null as number | null,
+    hoverId: null as number | null,
+    showDimmed,
+    sizeW: 0,
+    sizeH: 0,
+    sizeDpr: 1,
+  });
+
   const dirtyRef = useRef(true);
   const rafRef = useRef<number | null>(null);
+  const lastPaintRef = useRef(0);
 
+  // Tick once per RAF; if we painted within the frame budget, defer.
   useEffect(() => {
-    dirtyRef.current = true;
-    // Cancel any pending frame so the next loop captures the latest closure.
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
+    const schedule = () => {
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(loop);
+    };
     const loop = () => {
       rafRef.current = null;
+      const now = performance.now();
+      if (now - lastPaintRef.current < FRAME_BUDGET_MS) {
+        // Within frame budget — re-queue the next rAF and try again.
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
       if (!dirtyRef.current) return;
-      dirtyRef.current = false;
+      const inputs = renderInputsRef.current;
       const canvas = canvasRef.current;
-      if (!canvas || size.w === 0 || size.h === 0) return;
-      const dpr = size.dpr;
-      // Resize canvas backing store
-      if (canvas.width !== size.w * dpr) canvas.width = size.w * dpr;
-      if (canvas.height !== size.h * dpr) canvas.height = size.h * dpr;
-      canvas.style.width = `${size.w}px`;
-      canvas.style.height = `${size.h}px`;
+      if (!canvas || inputs.size.w === 0 || inputs.size.h === 0) return;
+
+      // Decide whether the visible content actually changed since the
+      // last paint. Cheap signature check first.
+      const evs = inputs.events;
+      let lastTs = -1;
+      let inRangeCount = 0;
+      let lastInRangeTs = -1;
+      for (let i = 0; i < evs.length; i++) {
+        const ev = evs[i];
+        if (ev.ts > lastTs) lastTs = ev.ts;
+        if (ev.ts >= inputs.view.fromNs && ev.ts <= inputs.view.toNs) {
+          inRangeCount++;
+          if (ev.ts > lastInRangeTs) lastInRangeTs = ev.ts;
+        }
+      }
+      const ld = lastDrawRef.current;
+      const sameVisibleSet =
+        inRangeCount === ld.inRangeCount &&
+        lastInRangeTs === ld.lastEventInRange &&
+        inputs.view.fromNs === ld.fromNs &&
+        inputs.view.toNs === ld.toNs &&
+        inputs.pidsOrdered.length === ld.pidCount &&
+        inputs.focusedPid === ld.focusedPid &&
+        inputs.selectedEventId === ld.selectedEventId &&
+        inputs.hoverId === ld.hoverId &&
+        inputs.showDimmed === ld.showDimmed &&
+        inputs.size.w === ld.sizeW &&
+        inputs.size.h === ld.sizeH &&
+        inputs.size.dpr === ld.sizeDpr;
+      if (sameVisibleSet) {
+        // Nothing to paint. Stay clean; future state changes will redirty.
+        dirtyRef.current = false;
+        return;
+      }
+
+      dirtyRef.current = false;
+      lastPaintRef.current = now;
+
+      const dpr = inputs.size.dpr;
+      if (canvas.width !== inputs.size.w * dpr) canvas.width = inputs.size.w * dpr;
+      if (canvas.height !== inputs.size.h * dpr) canvas.height = inputs.size.h * dpr;
+      canvas.style.width = `${inputs.size.w}px`;
+      canvas.style.height = `${inputs.size.h}px`;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const result = render({
         ctx,
-        width: size.w,
-        height: size.h,
+        width: inputs.size.w,
+        height: inputs.size.h,
         dpr,
-        events,
-        pidsOrdered,
-        pidLabels,
-        viewFromNs: view.fromNs,
-        viewToNs: view.toNs,
-        focusedPid,
-        selectedEventId,
-        hoverEventId: hoverId,
-        showDimmed,
+        events: inputs.events,
+        pidsOrdered: inputs.pidsOrdered,
+        pidLabels: inputs.pidLabels,
+        viewFromNs: inputs.view.fromNs,
+        viewToNs: inputs.view.toNs,
+        focusedPid: inputs.focusedPid,
+        selectedEventId: inputs.selectedEventId,
+        hoverEventId: inputs.hoverId,
+        showDimmed: inputs.showDimmed,
       });
       hitsRef.current = result.hits;
       laneTopsRef.current = result.laneTops;
+
+      ld.eventsLength = evs.length;
+      ld.lastEventTs = lastTs;
+      ld.lastEventInRange = lastInRangeTs;
+      ld.inRangeCount = inRangeCount;
+      ld.fromNs = inputs.view.fromNs;
+      ld.toNs = inputs.view.toNs;
+      ld.pidCount = inputs.pidsOrdered.length;
+      ld.focusedPid = inputs.focusedPid;
+      ld.selectedEventId = inputs.selectedEventId;
+      ld.hoverId = inputs.hoverId;
+      ld.showDimmed = inputs.showDimmed;
+      ld.sizeW = inputs.size.w;
+      ld.sizeH = inputs.size.h;
+      ld.sizeDpr = inputs.size.dpr;
     };
-    rafRef.current = requestAnimationFrame(loop);
+
+    dirtyRef.current = true;
+    schedule();
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -202,7 +311,8 @@ export function SwimlaneTimeline() {
     }
     if (hit !== hoverId) {
       setHoverId(hit);
-      const ev = hit !== null ? events.find((e2) => e2.id === hit) ?? null : null;
+      const ev: Event | null =
+        hit !== null ? events.find((e2) => e2.id === hit) ?? null : null;
       setHoverEvent(ev);
     }
   };

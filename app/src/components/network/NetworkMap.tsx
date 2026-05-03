@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import {
   forceCenter,
   forceCollide,
@@ -23,7 +23,7 @@ interface ClusterNode extends SimulationNodeDatum {
  * connections by /24 subnet and render them as a force-directed bubble
  * cluster, with a domain (DNS) aggregation list on the right side.
  */
-export function NetworkMap() {
+export const NetworkMap = memo(function NetworkMap() {
   const events = useEventStore(selectVisibleEvents);
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -190,7 +190,7 @@ export function NetworkMap() {
       </aside>
     </div>
   );
-}
+});
 
 function radiusFor(count: number): number {
   return Math.min(48, 6 + Math.sqrt(count) * 3);

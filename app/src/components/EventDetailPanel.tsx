@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { Event } from "../types";
 import { SEVERITY_LABEL } from "../types";
 import { severityClass, useEventStore } from "../store/eventStore";
@@ -9,7 +9,7 @@ function formatTs(ns: number): string {
   return `${d.toLocaleTimeString("en-GB", { hour12: false })}.${String(ms % 1000).padStart(3, "0")}`;
 }
 
-export function EventDetailPanel() {
+export const EventDetailPanel = memo(function EventDetailPanel() {
   const events = useEventStore((s) => s.events);
   const selectedEventId = useEventStore((s) => s.selectedEventId);
   const bookmarks = useEventStore((s) => s.bookmarks);
@@ -184,4 +184,4 @@ export function EventDetailPanel() {
       </div>
     </aside>
   );
-}
+});

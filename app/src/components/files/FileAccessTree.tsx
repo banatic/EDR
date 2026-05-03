@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { selectVisibleEvents, useEventStore } from "../../store/eventStore";
 
 interface DirNode {
@@ -46,7 +46,7 @@ function splitPath(p: string): string[] {
   return parts;
 }
 
-export function FileAccessTree() {
+export const FileAccessTree = memo(function FileAccessTree() {
   const events = useEventStore(selectVisibleEvents);
 
   const root = useMemo<DirNode>(() => {
@@ -88,7 +88,7 @@ export function FileAccessTree() {
         ))}
     </div>
   );
-}
+});
 
 function DirRow({
   node,

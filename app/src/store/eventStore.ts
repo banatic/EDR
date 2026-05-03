@@ -9,16 +9,30 @@ import type {
   TabId,
 } from "../types";
 import { getEventSource } from "../data";
-import type { EventSource } from "../data";
+import type { EventSource, RunningProcess } from "../data";
 
 const NS_PER_MS = 1_000_000;
-const RING_CAPACITY = 60_000;
+/**
+ * Hard cap on retained events. Real ETW load can hit 10k events/sec; at
+ * ~10s of full-throttle traffic we hit this and start evicting.
+ */
+const RING_CAPACITY = 100_000;
+/** When the ring fills, drop the oldest CHUNK so we don't thrash. */
+const RING_EVICT_CHUNK = 5_000;
 
 interface State {
   // Data
   source: EventSource;
-  events: Event[]; // ring buffer (chronological)
+  events: Event[]; // logical chronological view (already-evicted prefix removed)
+  /**
+   * Monotonically increasing index of the oldest retained event (for
+   * future absolute references). Indexes inside `byPid`/`byCategory`
+   * always refer to positions in the current `events` array.
+   */
+  evictionOffset: number;
   processes: ProcessSummary[];
+  /** Cached running-process inventory from the OS (icon-aware). */
+  runningProcesses: RunningProcess[];
   settings: Settings;
   // Indexes (rebuilt incrementally)
   byPid: Map<number, number[]>; // pid → indexes into `events`
@@ -43,7 +57,8 @@ interface State {
 
 interface Actions {
   initialize: () => Promise<void>;
-  pushEvent: (ev: Event) => void;
+  /** Append a batch of events with a single store update. */
+  appendMany: (events: Event[]) => void;
 
   setMode: (mode: AppMode) => void;
   setRangeMinutes: (m: number) => void;
@@ -63,7 +78,9 @@ let nextLocalId = 1_000_000_000;
 export const useEventStore = create<EventStoreState>((set, get) => ({
   source: getEventSource(),
   events: [],
+  evictionOffset: 0,
   processes: [],
+  runningProcesses: [],
   settings: { hide_whitelisted: false, cluster_threshold: 10, show_dimmed: true },
   byPid: new Map(),
   byCategory: new Map(),
@@ -86,6 +103,15 @@ export const useEventStore = create<EventStoreState>((set, get) => ({
     const settings = await source.getSettings();
     const backlog = await source.queryEvents({ limit: RING_CAPACITY });
     const processes = await source.listProcesses();
+    // Best-effort running-process inventory; if the backend doesn't have
+    // the new command yet, fall back to an empty array rather than
+    // blocking initialization.
+    let runningProcesses: RunningProcess[] = [];
+    try {
+      runningProcesses = await source.listRunningProcesses();
+    } catch {
+      runningProcesses = [];
+    }
 
     const events: Event[] = [];
     const byPid = new Map<number, number[]>();
@@ -109,64 +135,93 @@ export const useEventStore = create<EventStoreState>((set, get) => ({
       if (firstSeen.get(firstSeenKey(ev)) === ev.ts) ev.isNew = true;
     }
 
-    set({ settings, events, processes, byPid, byCategory, firstSeen, ready: true });
+    set({
+      settings,
+      events,
+      processes,
+      runningProcesses,
+      byPid,
+      byCategory,
+      firstSeen,
+      ready: true,
+    });
 
-    // Subscribe to streamed events.
-    source.subscribe((ev) => get().pushEvent(ev));
+    // Subscribe to streamed event batches.
+    source.subscribeBatch((batch) => get().appendMany(batch));
   },
 
-  pushEvent(rawEv) {
-    const ev = ensureId(rawEv);
+  appendMany(rawBatch) {
+    if (rawBatch.length === 0) return;
     set((state) => {
-      const events = state.events;
+      // Mutate copies in-place: we own these structures and are firing
+      // exactly one React state update for the whole batch.
+      const events = state.events.slice();
       const byPid = new Map(state.byPid);
       const byCategory = new Map(state.byCategory);
-      const firstSeen = new Map(state.firstSeen);
+      const firstSeen = state.firstSeen; // mutated in place — refs not shared with React tree
 
-      const k = firstSeenKey(ev);
-      if (!firstSeen.has(k)) {
-        firstSeen.set(k, ev.ts);
-        ev.isNew = true;
+      // Process inventory updates clone-on-write only once for the batch.
+      const processes = state.processes.slice();
+      const procIndex = new Map<number, number>();
+      for (let i = 0; i < processes.length; i++) procIndex.set(processes[i].pid, i);
+
+      for (let i = 0; i < rawBatch.length; i++) {
+        const ev = ensureId(rawBatch[i]);
+
+        const k = firstSeenKey(ev);
+        if (!firstSeen.has(k)) {
+          firstSeen.set(k, ev.ts);
+          ev.isNew = true;
+        }
+
+        const idx = events.length;
+        events.push(ev);
+        pushIndex(byPid, ev.pid, idx);
+        pushIndex(byCategory, ev.category, idx);
+
+        const pi = procIndex.get(ev.pid);
+        if (pi === undefined) {
+          processes.push({
+            pid: ev.pid,
+            ppid: ev.ppid,
+            proc_name: ev.proc_name,
+            first_seen_ts: ev.ts,
+            last_seen_ts: ev.ts,
+            event_count: 1,
+            alert_count: ev.severity === 2 ? 1 : 0,
+          });
+          procIndex.set(ev.pid, processes.length - 1);
+        } else {
+          // Clone before mutating so equality-checked memoizers downstream
+          // notice the change.
+          const existing = processes[pi];
+          processes[pi] = {
+            ...existing,
+            last_seen_ts: ev.ts,
+            event_count: existing.event_count + 1,
+            alert_count: existing.alert_count + (ev.severity === 2 ? 1 : 0),
+          };
+        }
       }
 
-      events.push(ev);
-      pushIndex(byPid, ev.pid, events.length - 1);
-      pushIndex(byCategory, ev.category, events.length - 1);
-
-      // Ring buffer trim: drop the oldest 5k when we go over capacity. Index
-      // arrays are rebuilt rather than shifted to keep the hot path O(1).
+      // Ring buffer trim: drop the oldest chunk in O(events.length) only
+      // when we exceed the cap. We rebuild the indexes on eviction; the
+      // common path (no eviction) stays O(batchSize).
       let nextEvents = events;
       let nextByPid = byPid;
       let nextByCategory = byCategory;
+      let nextOffset = state.evictionOffset;
       if (events.length > RING_CAPACITY) {
-        nextEvents = events.slice(events.length - (RING_CAPACITY - 5_000));
-        nextByPid = new Map();
-        nextByCategory = new Map();
+        const drop = events.length - (RING_CAPACITY - RING_EVICT_CHUNK);
+        nextEvents = events.slice(drop);
+        nextByPid = new Map<number, number[]>();
+        nextByCategory = new Map<Category, number[]>();
         for (let i = 0; i < nextEvents.length; i++) {
           const e = nextEvents[i];
           pushIndex(nextByPid, e.pid, i);
           pushIndex(nextByCategory, e.category, i);
         }
-      }
-
-      // Process inventory bump.
-      const processes = state.processes.slice();
-      let p = processes.find((pp) => pp.pid === ev.pid);
-      if (!p) {
-        p = {
-          pid: ev.pid,
-          ppid: ev.ppid,
-          proc_name: ev.proc_name,
-          first_seen_ts: ev.ts,
-          last_seen_ts: ev.ts,
-          event_count: 1,
-          alert_count: ev.severity === 2 ? 1 : 0,
-        };
-        processes.push(p);
-      } else {
-        p.last_seen_ts = ev.ts;
-        p.event_count += 1;
-        if (ev.severity === 2) p.alert_count += 1;
+        nextOffset = state.evictionOffset + drop;
       }
 
       return {
@@ -175,6 +230,7 @@ export const useEventStore = create<EventStoreState>((set, get) => ({
         byCategory: nextByCategory,
         firstSeen,
         processes,
+        evictionOffset: nextOffset,
       };
     });
   },
@@ -258,7 +314,14 @@ export function selectVisibleRange(s: EventStoreState): { fromNs: number; toNs: 
   return { fromNs, toNs: last };
 }
 
-/** Filter events by the active range, search, and whitelist setting. */
+/**
+ * Filter events by the active range, search, and whitelist setting.
+ *
+ * NOTE: this still walks the full retained event list. Components that
+ * rerender on every batch should select via `useEventStore` directly so
+ * Zustand can shallow-compare the array reference; if the events array
+ * didn't change, the selector won't fire and downstream `useMemo`s skip.
+ */
 export function selectVisibleEvents(s: EventStoreState): Event[] {
   const { fromNs, toNs } = selectVisibleRange(s);
   const q = s.search.trim().toLowerCase();

@@ -5,6 +5,7 @@
 //! is also broadcast to the UI on the `edr://event` channel.
 
 mod commands;
+mod procinfo;
 mod state;
 
 use std::io::Write;
@@ -43,6 +44,8 @@ pub fn run() {
             commands::get_settings,
             commands::set_setting,
             commands::get_runtime_info,
+            procinfo::list_running_processes,
+            procinfo::get_process_icon,
         ])
         .setup(|app| {
             let store: Arc<dyn EventStore> = Arc::new(MemoryStore::default());
@@ -80,16 +83,51 @@ pub fn run() {
                 let mut processor =
                     EventProcessor::new(whitelist, ClusterConfig::default());
                 let mut rx_raw = rx_raw;
-                while let Some(ev) = rx_raw.recv().await {
-                    let mut ev = match processor.process(ev) {
-                        ProcessOutput::Emit(e) => e,
-                        ProcessOutput::Aggregate(e) => e,
-                        ProcessOutput::Drop => continue,
-                    };
-                    engine_for_task.evaluate(&mut ev);
-                    let _ = app_handle.emit("edr://event", &ev);
-                    if tx_out.send(ev).await.is_err() {
-                        break;
+
+                // Batch UI emissions: each `app_handle.emit` is a JSON
+                // serialize + IPC roundtrip + React reconcile. At 10k+
+                // events/sec from ETW that flat-out kills the renderer.
+                // Coalesce into ~10 emissions/sec or whenever 512 events
+                // are buffered, whichever comes first.
+                const BATCH_CAP: usize = 512;
+                let flush_interval = Duration::from_millis(100);
+                let mut buf: Vec<Event> = Vec::with_capacity(BATCH_CAP);
+                let mut interval = tokio::time::interval(flush_interval);
+                interval.set_missed_tick_behavior(
+                    tokio::time::MissedTickBehavior::Delay,
+                );
+
+                loop {
+                    tokio::select! {
+                        biased;
+                        _ = interval.tick() => {
+                            if !buf.is_empty() {
+                                let _ = app_handle.emit("edr://event-batch", &buf);
+                                buf.clear();
+                            }
+                        }
+                        maybe_ev = rx_raw.recv() => {
+                            let Some(ev) = maybe_ev else {
+                                if !buf.is_empty() {
+                                    let _ = app_handle.emit("edr://event-batch", &buf);
+                                }
+                                break;
+                            };
+                            let mut ev = match processor.process(ev) {
+                                ProcessOutput::Emit(e) => e,
+                                ProcessOutput::Aggregate(e) => e,
+                                ProcessOutput::Drop => continue,
+                            };
+                            engine_for_task.evaluate(&mut ev);
+                            buf.push(ev.clone());
+                            if buf.len() >= BATCH_CAP {
+                                let _ = app_handle.emit("edr://event-batch", &buf);
+                                buf.clear();
+                            }
+                            if tx_out.send(ev).await.is_err() {
+                                break;
+                            }
+                        }
                     }
                 }
             });

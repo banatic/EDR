@@ -30,6 +30,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 parking_lot = "0.12"
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
 
 [features]
 # Mirror tauri's `custom-protocol` feature so `tauri build` works.

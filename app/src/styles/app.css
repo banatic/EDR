@@ -192,8 +192,10 @@ select {
 .process-tree {
   border-right: 0.5px solid var(--color-border-tertiary);
   background: var(--color-background-secondary);
-  overflow-y: auto;
+  overflow: hidden;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .tree-section {
@@ -207,18 +209,22 @@ select {
 
 .tree-list {
   padding: var(--space-2) 0 var(--space-3);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .tree-node {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px var(--space-3);
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--color-text-primary);
   border-left: 2px solid transparent;
+  /* react-window applies `top` + `height` via inline style; keep our own
+     vertical padding minimal to avoid overlap. */
+  padding-right: var(--space-3);
 }
 
 .tree-node:hover {
@@ -247,6 +253,19 @@ select {
   border-radius: 50%;
   background: var(--severity-alert);
   box-shadow: 0 0 4px rgba(248, 113, 113, 0.7);
+}
+
+.proc-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+}
+
+.proc-icon-placeholder {
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
 }
 
 /* ---------- Tabs ---------- */

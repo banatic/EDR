@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useEventStore, selectVisibleEvents } from "../store/eventStore";
 
 const RANGE_OPTIONS = [
@@ -9,7 +9,36 @@ const RANGE_OPTIONS = [
   { label: "1 hr", value: 60 },
 ];
 
-export function TopBar() {
+/**
+ * Live counters re-render at most every {@link STATS_INTERVAL_MS}. The
+ * underlying store still updates on every batch but the component sleeps
+ * between ticks; clock drift between ticks is irrelevant for an at-a-
+ * glance counter.
+ */
+const STATS_INTERVAL_MS = 500;
+
+interface Stats {
+  total: number;
+  alert: number;
+  susp: number;
+}
+
+function emptyStats(): Stats {
+  return { total: 0, alert: 0, susp: 0 };
+}
+
+function computeStats(): Stats {
+  const evs = selectVisibleEvents(useEventStore.getState());
+  let alert = 0;
+  let susp = 0;
+  for (const e of evs) {
+    if (e.severity === 2) alert += 1;
+    else if (e.severity === 1) susp += 1;
+  }
+  return { total: evs.length, alert, susp };
+}
+
+export const TopBar = memo(function TopBar() {
   const mode = useEventStore((s) => s.mode);
   const rangeMinutes = useEventStore((s) => s.rangeMinutes);
   const search = useEventStore((s) => s.search);
@@ -17,16 +46,20 @@ export function TopBar() {
   const setRangeMinutes = useEventStore((s) => s.setRangeMinutes);
   const setSearch = useEventStore((s) => s.setSearch);
 
-  const visible = useEventStore(selectVisibleEvents);
-  const stats = useMemo(() => {
-    let alert = 0;
-    let susp = 0;
-    for (const e of visible) {
-      if (e.severity === 2) alert += 1;
-      else if (e.severity === 1) susp += 1;
-    }
-    return { total: visible.length, alert, susp };
-  }, [visible]);
+  // Stats are sampled on a fixed interval; the input box and dropdowns
+  // remain perfectly responsive even as the store fires on every batch.
+  const [stats, setStats] = useState<Stats>(emptyStats);
+  const tickRef = useRef<number | null>(null);
+  useEffect(() => {
+    setStats(computeStats());
+    tickRef.current = window.setInterval(() => {
+      setStats(computeStats());
+    }, STATS_INTERVAL_MS);
+    return () => {
+      if (tickRef.current !== null) window.clearInterval(tickRef.current);
+      tickRef.current = null;
+    };
+  }, []);
 
   return (
     <div className="topbar">
@@ -91,4 +124,4 @@ export function TopBar() {
       </div>
     </div>
   );
-}
+});
