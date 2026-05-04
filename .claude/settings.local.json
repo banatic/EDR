@@ -19,7 +19,8 @@
       "Bash(npx tsc *)",
       "Bash(echo \"exit=$?\")",
       "Bash(npm run *)",
-      "Bash(findstr /R \"test result\")"
+      "Bash(findstr /R \"test result\")",
+      "Bash(echo \"tsc exit=$?\")"
     ]
   }
 }
