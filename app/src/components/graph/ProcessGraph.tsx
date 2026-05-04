@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   forceCenter,
   forceCollide,
@@ -9,6 +9,8 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from "d3-force";
+import { zoom as d3zoom, zoomIdentity, type ZoomBehavior } from "d3-zoom";
+import { select } from "d3-selection";
 import { selectVisibleEvents, useEventStore } from "../../store/eventStore";
 
 interface ProcNode extends SimulationNodeDatum {
@@ -24,13 +26,26 @@ interface ProcLink extends SimulationLinkDatum<ProcNode> {
   weight: number;
 }
 
+interface HoverState {
+  node: ProcNode;
+  x: number;
+  y: number;
+}
+
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 4;
+
 export const ProcessGraph = memo(function ProcessGraph() {
   const events = useEventStore(selectVisibleEvents);
   const focusedPid = useEventStore((s) => s.focusedPid);
   const setFocusedPid = useEventStore((s) => s.setFocusedPid);
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const viewportRef = useRef<SVGGElement>(null);
   const simRef = useRef<Simulation<ProcNode, ProcLink> | null>(null);
+  const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+
+  const [hover, setHover] = useState<HoverState | null>(null);
 
   const { nodes, links } = useMemo(() => {
     const procMap = new Map<number, ProcNode>();
@@ -74,7 +89,8 @@ export const ProcessGraph = memo(function ProcessGraph() {
   useEffect(() => {
     const wrap = wrapRef.current;
     const svg = svgRef.current;
-    if (!wrap || !svg) return;
+    const viewport = viewportRef.current;
+    if (!wrap || !svg || !viewport) return;
 
     const rect = wrap.getBoundingClientRect();
     const W = rect.width;
@@ -84,6 +100,10 @@ export const ProcessGraph = memo(function ProcessGraph() {
       simRef.current.stop();
       simRef.current = null;
     }
+
+    // Clear previous render (children of viewport <g>, not svg itself —
+    // viewport keeps its identity so the d3-zoom transform persists).
+    while (viewport.firstChild) viewport.removeChild(viewport.firstChild);
 
     if (nodes.length === 0) return;
 
@@ -98,19 +118,17 @@ export const ProcessGraph = memo(function ProcessGraph() {
       .force("center", forceCenter(W / 2, H / 2))
       .force(
         "collide",
-        forceCollide<ProcNode>().radius((d) => radiusFor(d.events) + 4),
+        forceCollide<ProcNode>().radius((d) => radiusFor(d.events) + 6),
       );
 
     simRef.current = sim;
 
-    // Imperative SVG render (avoid React reconciliation in tick).
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
     const NS = "http://www.w3.org/2000/svg";
 
     const linkLayer = document.createElementNS(NS, "g");
     const nodeLayer = document.createElementNS(NS, "g");
-    svg.appendChild(linkLayer);
-    svg.appendChild(nodeLayer);
+    viewport.appendChild(linkLayer);
+    viewport.appendChild(nodeLayer);
 
     const linkEls = links.map((lk) => {
       const el = document.createElementNS(NS, "line");
@@ -123,9 +141,27 @@ export const ProcessGraph = memo(function ProcessGraph() {
     const nodeEls = nodes.map((n) => {
       const g = document.createElementNS(NS, "g");
       g.setAttribute("style", "cursor:pointer");
-      g.addEventListener("click", () =>
-        setFocusedPid(focusedPid === n.id ? null : n.id),
-      );
+
+      g.addEventListener("click", (ev) => {
+        // Stop the click from propagating to the zoom-handler, which
+        // could otherwise be misread as a pan-end click.
+        ev.stopPropagation();
+        setFocusedPid(focusedPid === n.id ? null : n.id);
+      });
+
+      // Hover popup: track in screen coords (not SVG coords) so the
+      // overlay <div> is laid out relative to the wrapping container.
+      g.addEventListener("mouseenter", (ev) => {
+        const me = ev as MouseEvent;
+        const r = wrap.getBoundingClientRect();
+        setHover({ node: n, x: me.clientX - r.left, y: me.clientY - r.top });
+      });
+      g.addEventListener("mousemove", (ev) => {
+        const me = ev as MouseEvent;
+        const r = wrap.getBoundingClientRect();
+        setHover({ node: n, x: me.clientX - r.left, y: me.clientY - r.top });
+      });
+      g.addEventListener("mouseleave", () => setHover(null));
 
       const circle = document.createElementNS(NS, "circle");
       circle.setAttribute("r", `${radiusFor(n.events)}`);
@@ -147,7 +183,7 @@ export const ProcessGraph = memo(function ProcessGraph() {
       const text = document.createElementNS(NS, "text");
       text.setAttribute("text-anchor", "middle");
       text.setAttribute("dy", `${radiusFor(n.events) + 12}`);
-      text.textContent = `${n.name} [${n.id}]`;
+      text.textContent = truncateLabel(`${n.name} [${n.id}]`);
       g.appendChild(text);
 
       nodeLayer.appendChild(g);
@@ -178,15 +214,90 @@ export const ProcessGraph = memo(function ProcessGraph() {
     };
   }, [nodes, links, focusedPid, setFocusedPid]);
 
+  // Wire up d3-zoom on the SVG; it applies the transform to the viewport <g>.
+  // Done in a separate effect so it runs once per mount and survives the
+  // node/link re-render in the effect above.
+  useEffect(() => {
+    const svg = svgRef.current;
+    const viewport = viewportRef.current;
+    if (!svg || !viewport) return;
+
+    const z = d3zoom<SVGSVGElement, unknown>()
+      .scaleExtent([ZOOM_MIN, ZOOM_MAX])
+      // Block dblclick.zoom so we can repurpose double-click to "fit / reset".
+      .filter((event) => event.type !== "dblclick")
+      .on("zoom", (event) => {
+        viewport.setAttribute("transform", event.transform.toString());
+      });
+    zoomRef.current = z;
+    select(svg).call(z);
+
+    const onDblClick = (ev: MouseEvent) => {
+      ev.preventDefault();
+      select(svg).call(z.transform, zoomIdentity);
+    };
+    svg.addEventListener("dblclick", onDblClick);
+
+    return () => {
+      svg.removeEventListener("dblclick", onDblClick);
+      select(svg).on(".zoom", null);
+      zoomRef.current = null;
+    };
+  }, []);
+
+  const zoomBy = (factor: number) => {
+    const svg = svgRef.current;
+    const z = zoomRef.current;
+    if (!svg || !z) return;
+    select(svg).call(z.scaleBy, factor);
+  };
+
+  const resetZoom = () => {
+    const svg = svgRef.current;
+    const z = zoomRef.current;
+    if (!svg || !z) return;
+    select(svg).call(z.transform, zoomIdentity);
+  };
+
   if (nodes.length === 0) {
     return <div className="empty-state">no processes in current window</div>;
   }
 
   return (
     <div className="graph-root" ref={wrapRef}>
-      <svg ref={svgRef} />
+      <svg ref={svgRef}>
+        <g ref={viewportRef} />
+      </svg>
+
+      {hover ? (
+        <div
+          className="graph-hover-popup"
+          style={{ left: hover.x + 12, top: hover.y + 12 }}
+        >
+          <div className="title">
+            {hover.node.name} <span className="pid">[{hover.node.id}]</span>
+          </div>
+          <div className="meta">
+            events: {hover.node.events} · alerts: {hover.node.alerts}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="graph-controls">
+        <button title="Zoom in" onClick={() => zoomBy(1.4)}>
+          {"⊕"}
+        </button>
+        <button title="Zoom out" onClick={() => zoomBy(1 / 1.4)}>
+          {"⊖"}
+        </button>
+        <button title="Reset (or double-click canvas)" onClick={resetZoom}>
+          {"⊙"}
+        </button>
+      </div>
+
       <div className="legend">
-        node size = event count · red border = alerts present · click = focus pid
+        node size = event count · red border = alerts present · click = focus
+        pid · scroll = zoom · drag = pan · dblclick = reset
       </div>
     </div>
   );
@@ -194,4 +305,9 @@ export const ProcessGraph = memo(function ProcessGraph() {
 
 function radiusFor(events: number): number {
   return Math.min(36, 6 + Math.sqrt(events) * 2);
+}
+
+/** Keep node labels readable without measuring text width per-frame. */
+function truncateLabel(s: string): string {
+  return s.length <= 28 ? s : s.slice(0, 26) + "…";
 }
