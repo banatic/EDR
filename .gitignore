@@ -27,7 +27,7 @@ Thumbs.db
 *.duckdb
 *.duckdb.wal
 *.log
-data/
+/data/
 
 # Local secrets / config overrides
 .env
