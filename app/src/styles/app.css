@@ -60,9 +60,55 @@ select {
 
 .main-grid {
   display: grid;
-  grid-template-columns: 260px 1fr auto;
+  /*
+   * Five tracks: [left | left-splitter | center | right-splitter | right].
+   * The splitter columns are auto-sized so they vanish entirely when the
+   * Splitter component itself is unmounted (right side, when no event is
+   * selected). The panel widths are driven by CSS variables set inline
+   * by App.tsx; defaults below cover the very first paint before state
+   * is hydrated from localStorage.
+   */
+  grid-template-columns:
+    var(--left-col-width, 260px)
+    auto
+    1fr
+    auto
+    var(--right-panel-width, 0px);
   height: 100%;
   min-height: 0;
+}
+
+/* ---------- Splitter ---------- */
+
+.splitter {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  /* Touch-friendly hit area without changing the visible width. */
+  position: relative;
+  transition: background 120ms ease;
+  flex: 0 0 auto;
+  z-index: 1;
+}
+
+.splitter:hover,
+.splitter.dragging {
+  background: var(--color-accent);
+  opacity: 0.5;
+}
+
+/*
+ * `.collapsed` is only set on the right splitter when the detail panel
+ * is hidden. We zero its width so it occupies no space, but leave it in
+ * the DOM so the grid still has 5 tracks (children index stays stable).
+ */
+.splitter.collapsed {
+  width: 0;
+  pointer-events: none;
+}
+
+.splitter.collapsed:hover {
+  background: transparent;
 }
 
 /* ---------- TopBar ---------- */
@@ -174,6 +220,7 @@ select {
 
 .session-stats .stat {
   display: inline-flex;
+  align-items: center;
   gap: 4px;
 }
 
@@ -185,6 +232,94 @@ select {
 }
 .session-stats .stat .susp {
   color: var(--severity-suspicious);
+}
+
+/*
+ * Glyph/word toggle: by default we render the word label and hide the
+ * glyph. At lg-and-narrower viewports the @media rule below flips them.
+ */
+.session-stats .stat .glyph {
+  display: none;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.session-stats .stat .glyph.susp {
+  color: var(--severity-suspicious);
+}
+.session-stats .stat .glyph.alert {
+  color: var(--severity-alert);
+}
+
+.search-box .clear-btn {
+  color: var(--color-text-tertiary);
+  padding: 0 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.search-box .clear-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--border-radius-sm);
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-primary);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.status-chip .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.status-chip .dot.ok {
+  background: var(--color-text-success);
+  box-shadow: 0 0 4px rgba(74, 222, 128, 0.6);
+}
+
+.status-chip .dot.warn {
+  background: var(--severity-suspicious);
+  box-shadow: 0 0 4px rgba(251, 191, 36, 0.6);
+}
+
+.status-chip .dot.err {
+  background: var(--severity-alert);
+  box-shadow: 0 0 4px rgba(248, 113, 113, 0.6);
+}
+
+.status-chip.chip-err {
+  color: var(--color-text-danger);
+  border-color: var(--color-border-danger);
+}
+
+/* ---------- Left sidebar column ---------- */
+
+.left-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 0.5px solid var(--color-border-tertiary);
+  background: var(--color-background-secondary);
+  overflow: hidden;
+}
+
+.left-col .process-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-right: none;
 }
 
 /* ---------- ProcessTree ---------- */
@@ -247,12 +382,20 @@ select {
   color: var(--color-text-secondary);
 }
 
+/*
+ * Triangle (▲) shape — a non-color cue for color-blind users. Built with
+ * the classic CSS-border trick: zero-size box, transparent left/right
+ * borders, colored bottom border yields an upward-pointing triangle.
+ */
 .tree-node .alert-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--severity-alert);
-  box-shadow: 0 0 4px rgba(248, 113, 113, 0.7);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 6px solid var(--severity-alert);
+  background: transparent;
+  border-radius: 0;
+  filter: drop-shadow(0 0 3px rgba(248, 113, 113, 0.7));
 }
 
 .proc-icon {
@@ -343,17 +486,151 @@ select {
 
 .timeline-canvas-wrap {
   flex: 1;
-  position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
-.timeline-canvas-wrap canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+.timeline-header-sticky {
+  flex: 0 0 auto;
+  background: var(--color-background-secondary);
+}
+
+.timeline-header-sticky canvas {
+  display: block;
+}
+
+.timeline-body-scroll {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.timeline-body-scroll canvas {
   display: block;
   cursor: crosshair;
+}
+
+.timeline-legend-strip {
+  flex: 0 0 auto;
+  background: var(--color-background-secondary);
+  border-top: 0.5px solid var(--color-border-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+
+.timeline-legend-strip .item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.timeline-legend-strip .item:hover {
+  color: var(--color-text-primary);
+}
+
+.timeline-legend-strip .item.off {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
+.timeline-legend-strip .swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.timeline-sort-toggle {
+  margin-left: var(--space-2);
+}
+
+.timeline-sort-toggle button {
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+.timeline-expand-toggle {
+  margin-left: var(--space-2);
+}
+
+.timeline-expand-toggle button {
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+.timeline-expand-toggle button[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--border-radius-sm);
+  border: 0.5px solid transparent;
+}
+
+.live-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.live-pill.live {
+  color: var(--color-text-success);
+  background: var(--color-background-success);
+  border-color: var(--color-border-success);
+}
+
+.live-pill.live .dot.live {
+  background: var(--color-text-success);
+  box-shadow: 0 0 6px var(--color-text-success);
+}
+
+.live-pill.paused {
+  color: var(--color-text-danger);
+  background: var(--color-background-danger);
+  border-color: var(--color-border-danger);
+}
+
+.live-pill.paused .dot.paused {
+  background: var(--severity-alert);
+}
+
+.live-pill .go-live {
+  margin-left: 4px;
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: var(--border-radius-sm);
+  background: var(--color-background-tertiary);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.live-pill .go-live:hover {
+  background: var(--color-background-secondary);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .timeline-popup {
@@ -383,21 +660,33 @@ select {
   padding: 1px 0;
 }
 
+.timeline-popup.hover {
+  /* Cursor-following popup: keep it tighter than the region selection
+     popup and out of the way of the cursor's own pointer events. */
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 /* ---------- Detail panel ---------- */
 
 .detail-panel {
-  width: 360px;
+  /*
+   * Width comes from --right-panel-width on the parent grid (set inline
+   * by App.tsx). The grid track collapses to 0 when no event is
+   * selected, so the panel doesn't need its own width here — but we
+   * keep width: 100% so the inner layout fills the column.
+   */
+  width: 100%;
   border-left: 0.5px solid var(--color-border-tertiary);
   background: var(--color-background-secondary);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  transition: width var(--transition-base);
   overflow: hidden;
 }
 
 .detail-panel.collapsed {
-  width: 0;
   border-left: none;
 }
 
@@ -502,6 +791,13 @@ select {
   letter-spacing: 0.04em;
 }
 
+/* Glyph prefix gives a redundant non-color cue for severity. */
+.severity-badge .shape {
+  font-size: 9px;
+  margin-right: 2px;
+  opacity: 0.85;
+}
+
 .severity-badge.normal {
   background: rgba(154, 154, 154, 0.15);
   color: var(--color-text-secondary);
@@ -536,6 +832,134 @@ select {
   font-family: var(--font-mono);
 }
 
+/* ---------- Meta (structured) ---------- */
+
+.detail-body .meta-grid {
+  border-bottom: none;
+}
+
+.meta-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: var(--space-2);
+  border-top: 0.5px dashed var(--color-border-tertiary);
+}
+
+.meta-extra-row {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 4px var(--space-3);
+  font-size: 11px;
+}
+
+.meta-extra-row .k {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.meta-extra-row .v {
+  color: var(--color-text-secondary);
+  word-break: break-all;
+  font-family: var(--font-mono);
+}
+
+/* ---------- Bookmarks panel ---------- */
+
+.bookmarks-panel {
+  flex: 0 0 auto;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--color-border-tertiary);
+  background: var(--color-background-secondary);
+  min-height: 0;
+}
+
+.bookmarks-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+
+.bookmarks-section:hover {
+  color: var(--color-text-primary);
+}
+
+.bookmarks-section .caret {
+  font-size: 9px;
+  color: var(--color-text-tertiary);
+}
+
+.bookmarks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 var(--space-3) var(--space-3);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.bookmark-row {
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-sm);
+  padding: 6px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+
+.bookmark-row:hover {
+  border-color: var(--color-accent);
+}
+
+.bookmark-row .head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-primary);
+}
+
+.bookmark-row .head .proc {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookmark-row .remove-btn {
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.bookmark-row .remove-btn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-background-secondary);
+}
+
+.bookmark-row .meta {
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- Process Graph ---------- */
 
 .graph-root {
@@ -568,6 +992,73 @@ select {
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--border-radius-md);
   padding: var(--space-2) var(--space-3);
+}
+
+.graph-root svg {
+  cursor: grab;
+}
+.graph-root svg:active {
+  cursor: grabbing;
+}
+
+.graph-controls {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--color-background-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  padding: 4px;
+}
+
+.graph-controls button {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  border-radius: var(--border-radius-sm);
+  transition: var(--transition-fast);
+}
+
+.graph-controls button:hover {
+  background: var(--color-background-tertiary);
+  color: var(--color-text-primary);
+}
+
+.graph-hover-popup {
+  position: absolute;
+  pointer-events: none;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: var(--border-radius-md);
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-panel);
+  z-index: 5;
+  white-space: nowrap;
+}
+
+.graph-hover-popup .title {
+  color: var(--color-text-primary);
+}
+
+.graph-hover-popup .pid {
+  color: var(--color-text-tertiary);
+}
+
+.graph-hover-popup .meta {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: 10px;
 }
 
 /* ---------- Network Map ---------- */
@@ -621,6 +1112,20 @@ select {
   background: var(--color-background-tertiary);
 }
 
+.network-aside .row.clickable {
+  cursor: pointer;
+  border: 0.5px solid transparent;
+}
+
+.network-aside .row.clickable:hover {
+  border-color: var(--color-border-tertiary);
+}
+
+.network-aside .row.active {
+  background: var(--color-background-tertiary);
+  border-color: var(--color-accent);
+}
+
 .network-aside .row .v {
   color: var(--color-text-secondary);
 }
@@ -629,13 +1134,81 @@ select {
   margin-top: var(--space-4);
 }
 
+/* SVG cluster bubbles. Hover bumps the stroke; the active class is
+   toggled when search matches the cluster label. */
+.cluster-node circle {
+  transition: stroke-width 0.12s ease;
+}
+
+.cluster-node:hover circle {
+  stroke-width: 2;
+  filter: brightness(1.15);
+}
+
+.network-popup {
+  position: absolute;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: var(--border-radius-md);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-panel);
+  pointer-events: none;
+  width: 240px;
+  z-index: 5;
+}
+
+.network-popup .head {
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.network-popup .row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 1px 0;
+  color: var(--color-text-secondary);
+}
+
+.network-popup .row span:last-child {
+  color: var(--color-text-primary);
+}
+
+.network-popup .procs {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 0.5px solid var(--color-border-tertiary);
+}
+
+.network-popup .procs .proc {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 1px 0;
+  color: var(--color-text-primary);
+}
+
+.network-popup .procs .proc .pid {
+  color: var(--color-text-tertiary);
+}
+
+.network-popup .procs .more {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
 /* ---------- File Access Tree ---------- */
 
 .files-root {
   position: absolute;
   inset: 0;
-  overflow-y: auto;
-  padding: var(--space-3);
+  /* react-window owns its own scroll; we only provide the bounded box */
+  overflow: hidden;
   font-family: var(--font-mono);
 }
 
@@ -693,10 +1266,342 @@ select {
 
 .empty-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  text-align: center;
   height: 100%;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--color-text-tertiary);
+  padding: 0 var(--space-4);
+}
+
+.empty-state small {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  margin-top: var(--space-2);
+  display: block;
+  opacity: 0.85;
+}
+
+/* ---------- Help modal ---------- */
+
+.kbd {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: var(--border-radius-sm);
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-primary);
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.help-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.help-modal {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: var(--color-background-secondary);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-panel);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.help-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 0.5px solid var(--color-border-secondary);
+}
+
+.help-modal-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.help-modal-close {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--border-radius-sm);
+  transition: var(--transition-fast);
+}
+
+.help-modal-close:hover {
+  color: var(--color-text-primary);
+  background: var(--color-background-tertiary);
+}
+
+.help-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.help-modal-grid section h3 {
+  margin: 0 0 var(--space-3) 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+}
+
+.help-modal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.help-modal-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 12px;
+}
+
+.help-modal-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 96px;
+}
+
+.help-modal-plus {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.help-modal-desc {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.help-modal-footer {
+  padding: var(--space-3) var(--space-4);
+  border-top: 0.5px solid var(--color-border-secondary);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .help-modal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Icon button (TopBar gear, etc.) ---------- */
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  border-radius: var(--border-radius-sm);
+  transition: var(--transition-fast);
+}
+
+.icon-btn:hover {
+  background: var(--color-background-tertiary);
+  color: var(--color-text-primary);
+}
+
+/* ---------- Settings modal ---------- */
+
+.settings-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-background-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.settings-modal {
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 64px);
+  background: var(--color-background-secondary);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.settings-modal-header .title {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  letter-spacing: 0.04em;
+}
+
+.settings-modal-close {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--color-text-secondary);
+  border-radius: var(--border-radius-sm);
+}
+
+.settings-modal-close:hover {
+  background: var(--color-background-tertiary);
+  color: var(--color-text-primary);
+}
+
+.settings-modal-body {
+  padding: var(--space-3) var(--space-4);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-row input[type="checkbox"] {
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+.settings-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.settings-row-title {
+  color: var(--color-text-primary);
+}
+
+.settings-row-hint {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+}
+
+.settings-row--number {
+  align-items: center;
+  cursor: default;
+}
+
+.settings-row--number input[type="number"] {
+  width: 72px;
+  padding: 4px 6px;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-primary);
+  border-radius: var(--border-radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  outline: none;
+  text-align: right;
+}
+
+.settings-row--number input[type="number"]:focus {
+  border-color: var(--color-accent);
+}
+
+/* ---------- Responsive TopBar ----------
+ *
+ * Breakpoints below mirror `bpFromWidth()` in TopBar.tsx. JS-side state
+ * handles the status-chip label rewrite (which needs different strings,
+ * not just hide/show); CSS handles everything else (glyph toggles, label
+ * hiding, search-box width). Keep the thresholds in sync with TopBar.tsx.
+ */
+
+/* xl (>= 1280px): default rules above already cover this. */
+
+/* lg (< 1280px): tighten the search box. */
+@media (max-width: 1279px) {
+  .search-box {
+    width: 180px;
+  }
+}
+
+/* md/lg (< 1100px): swap stat word labels for glyphs to save ~50px. */
+@media (max-width: 1099px) {
+  .session-stats .stat .label {
+    display: none;
+  }
+  .session-stats .stat .glyph {
+    display: inline;
+  }
+}
+
+/* md (< 950px): drop the "range" label; the dropdown speaks for itself. */
+@media (max-width: 949px) {
+  .range-picker .label {
+    display: none;
+  }
+  .search-box {
+    width: 150px;
+  }
+}
+
+/* sm (< 850px): no extra CSS — status-chip text shortens via JS state. */
+
+/* xs (< 750px): collapse search box to its placeholder-less minimum. */
+@media (max-width: 749px) {
+  .search-box {
+    width: 100px;
+  }
+  .search-box input::placeholder {
+    color: transparent;
+  }
 }
