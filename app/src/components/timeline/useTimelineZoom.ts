@@ -8,6 +8,12 @@ export interface ViewRange {
 const NS_PER_MS = 1_000_000;
 const MIN_SPAN_NS = 1 * 1_000_000_000;             // 1 second
 const MAX_SPAN_NS = 60 * 60 * 1_000_000_000;       // 1 hour
+/**
+ * baseRange's `toNs` follows wall-clock (`Date.now()`) so even when the user
+ * hasn't moved the view, it can drift by a few ms between renders. Treat the
+ * view as "live" if it's within this tolerance of baseRange.
+ */
+const PAUSED_TOLERANCE_NS = 100 * 1_000_000;
 
 interface Options {
   /** The "natural" view bounds when not user-zoomed (e.g. last 10 minutes). */
@@ -19,6 +25,11 @@ interface Options {
 interface ZoomState {
   view: ViewRange;
   isPanning: boolean;
+  /**
+   * In monitoring mode (`follow=true`), true when the view has drifted away
+   * from the live tail (user zoomed/panned). Always false in investigation.
+   */
+  isPaused: boolean;
 }
 
 /**
@@ -43,10 +54,23 @@ export function useTimelineZoom(
   const followRef = useRef(follow);
   followRef.current = follow;
 
-  // Sync to baseRange when in follow mode.
+  // User-driven detach flag: true once the user has zoomed/panned away from
+  // baseRange in monitoring mode. We don't auto-resync just because baseRange
+  // ticked forward — that would yank a paused user back into live.
+  const detachedRef = useRef(false);
+
+  // Sync to baseRange when follow flips on, OR while in follow + not detached.
   useEffect(() => {
-    if (follow) setView(baseRange);
+    if (!follow) return;
+    if (detachedRef.current) return;
+    setView(baseRange);
   }, [follow, baseRange]);
+
+  // When mode flips off follow, drop the detached flag so a future flip back
+  // to monitoring starts clean.
+  useEffect(() => {
+    if (!follow) detachedRef.current = false;
+  }, [follow]);
 
   // Mouse wheel zoom (focus = cursor x)
   useEffect(() => {
@@ -57,6 +81,7 @@ export function useTimelineZoom(
         // horizontal trackpad pan
         const dx = e.deltaX;
         e.preventDefault();
+        if (followRef.current) detachedRef.current = true;
         setView((prev) => {
           const span = prev.toNs - prev.fromNs;
           const rect = el.getBoundingClientRect();
@@ -71,6 +96,7 @@ export function useTimelineZoom(
       const px = e.clientX - rect.left;
       const ratio = Math.max(0, Math.min(1, px / Math.max(1, rect.width)));
       const factor = e.deltaY > 0 ? 1.2 : 1 / 1.2;
+      if (followRef.current) detachedRef.current = true;
       setView((prev) => {
         const anchorNs = prev.fromNs + (prev.toNs - prev.fromNs) * ratio;
         let span = (prev.toNs - prev.fromNs) * factor;
@@ -97,6 +123,7 @@ export function useTimelineZoom(
         dragging = true;
         lastX = e.clientX;
         setPanning(true);
+        if (followRef.current) detachedRef.current = true;
       }
     };
     const onMove = (e: MouseEvent) => {
@@ -124,7 +151,10 @@ export function useTimelineZoom(
     };
   }, [ref]);
 
-  const resetView = useCallback(() => setView(baseRef.current), []);
+  const resetView = useCallback(() => {
+    detachedRef.current = false;
+    setView(baseRef.current);
+  }, []);
 
   const pixelToNs = useCallback(
     (px: number, leftGutter: number, width: number) => {
@@ -135,7 +165,13 @@ export function useTimelineZoom(
     [view],
   );
 
-  return { view, isPanning, resetView, pixelToNs };
+  // isPaused: only meaningful while following the live tail.
+  const isPaused =
+    follow &&
+    (Math.abs(view.fromNs - baseRange.fromNs) > PAUSED_TOLERANCE_NS ||
+      Math.abs(view.toNs - baseRange.toNs) > PAUSED_TOLERANCE_NS);
+
+  return { view, isPanning, isPaused, resetView, pixelToNs };
 }
 
 export const ZOOM_LIMITS = { MIN_SPAN_NS, MAX_SPAN_NS, NS_PER_MS };
