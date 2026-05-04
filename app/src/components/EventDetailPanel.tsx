@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import type { Event } from "../types";
+import type { Category, Event, Severity } from "../types";
 import { SEVERITY_LABEL } from "../types";
 import { severityClass, useEventStore } from "../store/eventStore";
 
@@ -7,6 +7,58 @@ function formatTs(ns: number): string {
   const ms = Math.floor(ns / 1_000_000);
   const d = new Date(ms);
   return `${d.toLocaleTimeString("en-GB", { hour12: false })}.${String(ms % 1000).padStart(3, "0")}`;
+}
+
+/**
+ * Per-category preferred meta keys, rendered as labelled rows.
+ * Anything not in this list falls into the .meta-extra dump.
+ */
+const META_KEYS_BY_CATEGORY: Record<Category, readonly string[]> = {
+  Process: ["cmdline", "integrity", "user", "parent_proc"],
+  File: ["size", "operation", "extension"],
+  Network: ["remote_ip", "remote_port", "protocol", "bytes_sent", "bytes_recv"],
+  Registry: ["value_name", "value_type", "value_data"],
+  ImageLoad: ["image_path", "signature", "signed"],
+  Thread: ["target_pid", "start_addr"],
+  Handle: ["target_pid", "access_mask"],
+  Integrity: ["module", "delta_bytes"],
+};
+
+const VALUE_MAX_LEN = 200;
+
+function stringify(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+function clip(s: string): string {
+  if (s.length <= VALUE_MAX_LEN) return s;
+  return `${s.slice(0, VALUE_MAX_LEN - 1)}…`;
+}
+
+// Redundant shape encoding so severity is distinguishable without color
+// (color-blind users, monochrome displays, B&W print).
+const SEVERITY_GLYPH: Record<Severity, string> = {
+  0: "○",
+  1: "◆",
+  2: "▲",
+};
+
+function SeverityBadge({ severity }: { severity: Severity }) {
+  return (
+    <span className={`severity-badge ${severityClass(severity)}`}>
+      <span className="shape" aria-hidden>
+        {SEVERITY_GLYPH[severity]}
+      </span>
+      {SEVERITY_LABEL[severity]}
+    </span>
+  );
 }
 
 export const EventDetailPanel = memo(function EventDetailPanel() {
@@ -22,11 +74,11 @@ export const EventDetailPanel = memo(function EventDetailPanel() {
     return events.find((e) => e.id === selectedEventId) ?? null;
   }, [events, selectedEventId]);
 
-  // Causality candidates:
-  //  - children processes (same ppid as selected.pid, kind=Process Create)
-  //  - other processes that touched the same `target`
+  // Causality candidates split into two buckets so the user can tell them apart:
+  //  - children: processes spawned by selected.pid
+  //  - sameTarget: other processes touching the same target
   const causality = useMemo(() => {
-    if (!selected) return [] as Event[];
+    if (!selected) return { children: [] as Event[], sameTarget: [] as Event[] };
     const children: Event[] = [];
     const sameTarget: Event[] = [];
     for (const ev of events) {
@@ -34,7 +86,7 @@ export const EventDetailPanel = memo(function EventDetailPanel() {
       if (ev.ppid === selected.pid && ev.category === "Process") children.push(ev);
       else if (ev.target === selected.target && ev.pid !== selected.pid) sameTarget.push(ev);
     }
-    return [...children.slice(0, 8), ...sameTarget.slice(0, 8)];
+    return { children: children.slice(0, 8), sameTarget: sameTarget.slice(0, 8) };
   }, [events, selected]);
 
   if (!selected) {
@@ -44,12 +96,23 @@ export const EventDetailPanel = memo(function EventDetailPanel() {
   const meta = selected.meta ?? {};
   const isBookmarked = selected.id !== undefined && bookmarks.has(selected.id);
 
+  // Split meta into known (per-category) and unknown buckets so the user gets
+  // a labelled grid for the common cases and a fallback dump for the rest.
+  const knownKeys = META_KEYS_BY_CATEGORY[selected.category] ?? [];
+  const knownEntries: Array<[string, unknown]> = [];
+  const unknownEntries: Array<[string, unknown]> = [];
+  for (const k of knownKeys) {
+    if (k in meta) knownEntries.push([k, meta[k]]);
+  }
+  for (const [k, v] of Object.entries(meta)) {
+    if (!knownKeys.includes(k)) unknownEntries.push([k, v]);
+  }
+  const hasMeta = knownEntries.length > 0 || unknownEntries.length > 0;
+
   return (
     <aside className="detail-panel">
       <div className="detail-header">
-        <span className={`severity-badge ${severityClass(selected.severity)}`}>
-          {SEVERITY_LABEL[selected.severity]}
-        </span>
+        <SeverityBadge severity={selected.severity} />
         <span className="title">
           {selected.proc_name} · {selected.op}
         </span>
@@ -108,76 +171,87 @@ export const EventDetailPanel = memo(function EventDetailPanel() {
           )}
         </div>
 
-        {Object.keys(meta).length > 0 && (
+        {hasMeta && (
           <>
             <div className="detail-section-title">meta</div>
-            <pre
-              style={{
-                background: "var(--color-background-tertiary)",
-                padding: "var(--space-2)",
-                borderRadius: "var(--border-radius-sm)",
-                fontSize: 11,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-              }}
-            >
-              {JSON.stringify(meta, null, 2)}
-            </pre>
+            {knownEntries.length > 0 && (
+              <div className="kv meta-grid">
+                {knownEntries.map(([k, v]) => (
+                  <span key={k} style={{ display: "contents" }}>
+                    <span className="k">{k}</span>
+                    <span className="v">{clip(stringify(v))}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {unknownEntries.length > 0 && (
+              <div className="meta-extra">
+                {unknownEntries.map(([k, v]) => (
+                  <div className="meta-extra-row" key={k}>
+                    <span className="k">{k}</span>
+                    <span className="v">{clip(stringify(v))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 
-        <div className="detail-section-title">causality</div>
-        {causality.length === 0 ? (
-          <div style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>
-            no downstream events linked
-          </div>
-        ) : (
-          <div className="causality-list">
-            {causality.map((c) => (
-              <div
-                key={c.id}
-                className="causality-row"
-                onClick={() => c.id !== undefined && setSelectedEvent(c.id)}
-              >
-                <div className="head">
-                  <span className={`severity-badge ${severityClass(c.severity)}`}>
-                    {SEVERITY_LABEL[c.severity]}
-                  </span>
-                  <span>{c.proc_name}</span>
-                  <span style={{ color: "var(--color-text-tertiary)" }}>·</span>
-                  <span>{c.op}</span>
+        {causality.children.length > 0 && (
+          <>
+            <div className="detail-section-title">
+              spawned ({causality.children.length})
+            </div>
+            <div className="causality-list">
+              {causality.children.map((c) => (
+                <div
+                  key={c.id}
+                  className="causality-row"
+                  onClick={() => c.id !== undefined && setSelectedEvent(c.id)}
+                >
+                  <div className="head">
+                    <SeverityBadge severity={c.severity} />
+                    <span>{c.proc_name}</span>
+                    <span style={{ color: "var(--color-text-tertiary)" }}>·</span>
+                    <span>{c.op}</span>
+                  </div>
+                  <div className="meta">{c.target}</div>
                 </div>
-                <div className="meta">{c.target}</div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         )}
 
-        {selected.id !== undefined && bookmarks.size > 0 && (
+        {causality.sameTarget.length > 0 && (
           <>
-            <div className="detail-section-title">bookmarks</div>
+            <div className="detail-section-title">
+              same target ({causality.sameTarget.length})
+            </div>
             <div className="causality-list">
-              {[...bookmarks].slice(0, 12).map((bid) => {
-                const e = events.find((ev) => ev.id === bid);
-                if (!e) return null;
-                return (
-                  <div
-                    key={bid}
-                    className="causality-row"
-                    onClick={() => setSelectedEvent(bid)}
-                  >
-                    <div className="head">
-                      <span className={`severity-badge ${severityClass(e.severity)}`}>
-                        {SEVERITY_LABEL[e.severity]}
-                      </span>
-                      <span>{e.proc_name}</span>
-                    </div>
-                    <div className="meta">
-                      {formatTs(e.ts)} · {e.op} · {e.target}
-                    </div>
+              {causality.sameTarget.map((c) => (
+                <div
+                  key={c.id}
+                  className="causality-row"
+                  onClick={() => c.id !== undefined && setSelectedEvent(c.id)}
+                >
+                  <div className="head">
+                    <SeverityBadge severity={c.severity} />
+                    <span>{c.proc_name}</span>
+                    <span style={{ color: "var(--color-text-tertiary)" }}>·</span>
+                    <span>{c.op}</span>
                   </div>
-                );
-              })}
+                  <div className="meta">{c.target}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {causality.children.length === 0 && causality.sameTarget.length === 0 && (
+          <>
+            <div className="detail-section-title">causality</div>
+            <div style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>
+              no related events
             </div>
           </>
         )}
