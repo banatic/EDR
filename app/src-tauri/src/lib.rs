@@ -58,15 +58,19 @@ pub fn run() {
             log_startup(&elevation, backend, rule_engine.rules().len());
             tracing::info!(elevated, backend, "PersonalEDR backend selected");
 
+            let runtime = Arc::new(parking_lot::RwLock::new(commands::RuntimeInfo {
+                backend: backend.into(),
+                elevated,
+                etw_failed: false,
+                integrity_watch: false,
+                rule_count: rule_engine.rules().len(),
+                message: None,
+            }));
             app.manage(AppState {
                 store: store.clone(),
                 rule_engine: rule_engine.clone(),
                 settings: parking_lot::RwLock::new(commands::Settings::default()),
-                runtime: parking_lot::RwLock::new(commands::RuntimeInfo {
-                    backend: backend.into(),
-                    elevated,
-                    rule_count: rule_engine.rules().len(),
-                }),
+                runtime: runtime.clone(),
             });
 
             let (tx_raw, rx_raw) = mpsc::channel::<Event>(8192);
@@ -132,7 +136,7 @@ pub fn run() {
                 }
             });
 
-            spawn_collector(tx_raw.clone(), elevated);
+            spawn_collector(tx_raw.clone(), elevated, runtime.clone());
 
             #[cfg(windows)]
             if elevated {
@@ -144,8 +148,18 @@ pub fn run() {
                         // the process. Dropping the handle would join
                         // (and stop) the worker thread.
                         std::mem::forget(handle);
+                        runtime.write().integrity_watch = true;
                     }
-                    Err(e) => tracing::warn!(error = %e, "integrity watch failed to start"),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "integrity watch failed to start");
+                        let mut r = runtime.write();
+                        r.integrity_watch = false;
+                        let detail = format!("integrity_watch_error=\"{e}\"");
+                        r.message = Some(match r.message.take() {
+                            Some(prev) => format!("{prev}; {detail}"),
+                            None => detail,
+                        });
+                    }
                 }
             }
 
@@ -156,7 +170,11 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn spawn_collector(tx: mpsc::Sender<Event>, elevated: bool) {
+fn spawn_collector(
+    tx: mpsc::Sender<Event>,
+    elevated: bool,
+    runtime: Arc<parking_lot::RwLock<commands::RuntimeInfo>>,
+) {
     #[cfg(windows)]
     if elevated {
         let c = Box::new(edr_collector::etw::EtwCollector::default());
@@ -165,6 +183,12 @@ fn spawn_collector(tx: mpsc::Sender<Event>, elevated: bool) {
                 let msg = format!("{e}");
                 tracing::error!(error = %msg, "ETW collector failed; falling back to synthetic");
                 append_log(&format!("etw_run_error=\"{msg}\" -> fallback=synthetic"));
+                {
+                    let mut r = runtime.write();
+                    r.backend = "synthetic".to_string();
+                    r.etw_failed = true;
+                    r.message = Some(format!("ETW failed: {msg}"));
+                }
                 let s = Box::new(SyntheticCollector { rate_eps: 50, max_events: None });
                 let _ = s.run(tx).await;
             }
@@ -172,6 +196,7 @@ fn spawn_collector(tx: mpsc::Sender<Event>, elevated: bool) {
         return;
     }
     let _ = elevated;
+    let _ = runtime;
     let s = Box::new(SyntheticCollector { rate_eps: 50, max_events: None });
     tauri::async_runtime::spawn(s.run(tx));
 }

@@ -4,7 +4,7 @@
  * window event for streaming.
  */
 
-import type { Bucket, Event, ProcessSummary, QueryFilter, Settings } from "../types";
+import type { Bucket, Event, ProcessSummary, QueryFilter, RuntimeInfo, Settings } from "../types";
 import type { EventSource, RunningProcess } from "./source";
 
 // NOTE: imported lazily so the mock source can run in plain Vite dev
@@ -71,6 +71,11 @@ export class TauriEventSource implements EventSource {
   async setSetting<K extends keyof Settings>(key: K, value: Settings[K]): Promise<void> {
     const { invoke } = await getTauri();
     await invoke<void>("set_setting", { key, value });
+  }
+
+  async getRuntimeInfo(): Promise<RuntimeInfo> {
+    const { invoke } = await getTauri();
+    return invoke<RuntimeInfo>("get_runtime_info");
   }
 
   subscribeBatch(onBatch: (events: Event[]) => void): () => void {

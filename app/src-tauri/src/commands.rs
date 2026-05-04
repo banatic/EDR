@@ -55,7 +55,14 @@ pub struct RuntimeInfo {
     /// "etw" or "synthetic".
     pub backend: String,
     pub elevated: bool,
+    /// True iff ETW was attempted and either failed to start or crashed
+    /// at runtime, forcing the synthetic fallback.
+    pub etw_failed: bool,
+    /// True iff `IntegrityWatch` is currently running.
+    pub integrity_watch: bool,
     pub rule_count: usize,
+    /// Optional human-readable status detail (e.g. ETW failure reason).
+    pub message: Option<String>,
 }
 
 impl Default for Settings {

@@ -1,4 +1,4 @@
-import type { Bucket, Event, ProcessSummary, QueryFilter, Settings } from "../types";
+import type { Bucket, Event, ProcessSummary, QueryFilter, RuntimeInfo, Settings } from "../types";
 
 /**
  * Snapshot of a currently-running process. Returned by
@@ -38,6 +38,9 @@ export interface EventSource {
 
   getSettings(): Promise<Settings>;
   setSetting(key: keyof Settings, value: Settings[keyof Settings]): Promise<void>;
+
+  /** One-shot snapshot of which backend is running and whether ETW failed. */
+  getRuntimeInfo(): Promise<RuntimeInfo>;
 
   /**
    * Subscribe to streamed event batches. Returns an unlisten fn.

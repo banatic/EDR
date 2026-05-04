@@ -15,6 +15,7 @@ import type {
   Event,
   ProcessSummary,
   QueryFilter,
+  RuntimeInfo,
   Settings,
   Severity,
 } from "../types";
@@ -218,6 +219,16 @@ export class MockEventSource implements EventSource {
 
   async setSetting<K extends keyof Settings>(key: K, value: Settings[K]): Promise<void> {
     (this.settings as Record<keyof Settings, Settings[keyof Settings]>)[key] = value;
+  }
+
+  async getRuntimeInfo(): Promise<RuntimeInfo> {
+    return {
+      backend: "synthetic",
+      elevated: false,
+      etw_failed: false,
+      integrity_watch: false,
+      rule_count: 0,
+    };
   }
 
   subscribeBatch(onBatch: (events: Event[]) => void): () => void {

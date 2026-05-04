@@ -4,6 +4,7 @@ import type {
   Category,
   Event,
   ProcessSummary,
+  RuntimeInfo,
   Severity,
   Settings,
   TabId,
@@ -34,6 +35,8 @@ interface State {
   /** Cached running-process inventory from the OS (icon-aware). */
   runningProcesses: RunningProcess[];
   settings: Settings;
+  /** One-shot backend status snapshot, fetched on initialize. */
+  runtimeInfo: RuntimeInfo | null;
   // Indexes (rebuilt incrementally)
   byPid: Map<number, number[]>; // pid → indexes into `events`
   byCategory: Map<Category, number[]>;
@@ -82,6 +85,7 @@ export const useEventStore = create<EventStoreState>((set, get) => ({
   processes: [],
   runningProcesses: [],
   settings: { hide_whitelisted: false, cluster_threshold: 10, show_dimmed: true },
+  runtimeInfo: null,
   byPid: new Map(),
   byCategory: new Map(),
   firstSeen: new Map(),
@@ -100,6 +104,15 @@ export const useEventStore = create<EventStoreState>((set, get) => ({
 
   async initialize() {
     const { source } = get();
+    // Fetch runtime info first (and surface it to the store before the
+    // heavier backlog query) so the EmptyState shows the correct
+    // "demo data" / "ETW failed" hint while we wait.
+    try {
+      const info = await source.getRuntimeInfo();
+      set({ runtimeInfo: info });
+    } catch {
+      // Older backends without the command leave runtimeInfo null.
+    }
     const settings = await source.getSettings();
     const backlog = await source.queryEvents({ limit: RING_CAPACITY });
     const processes = await source.listProcesses();

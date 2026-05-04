@@ -12,5 +12,8 @@ pub struct AppState {
     #[allow(dead_code)]
     pub rule_engine: Arc<RuleEngine>,
     pub settings: RwLock<Settings>,
-    pub runtime: RwLock<RuntimeInfo>,
+    /// Runtime info is mutated from background tasks (ETW failure, integrity
+    /// watch start) so it lives behind its own `Arc<RwLock<_>>` rather than
+    /// being borrowed exclusively from `State`.
+    pub runtime: Arc<RwLock<RuntimeInfo>>,
 }

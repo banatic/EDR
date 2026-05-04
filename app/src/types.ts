@@ -93,6 +93,20 @@ export interface Settings {
   show_dimmed: boolean;
 }
 
+/**
+ * Backend runtime status. Mirrors the Rust `RuntimeInfo` in
+ * `app/src-tauri/src/commands.rs`. `etw_failed` flips to `true` when ETW
+ * was attempted but bailed at startup or runtime, forcing a synthetic fallback.
+ */
+export interface RuntimeInfo {
+  backend: "etw" | "synthetic";
+  elevated: boolean;
+  etw_failed: boolean;
+  integrity_watch: boolean;
+  rule_count: number;
+  message?: string;
+}
+
 export type AppMode = "monitoring" | "investigation";
 
 export type TabId = "timeline" | "graph" | "network" | "files";
